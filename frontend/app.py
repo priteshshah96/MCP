@@ -1,12 +1,12 @@
 """
-MCP Scientific Paper Analyzer - Gradio Frontend
+MCP Scientific Paper Analyzer - Gradio Frontend (Gradio 5.23.0)
 
 This application provides a user interface for the MCP Scientific Paper Analyzer using Gradio.
 It connects to the backend API to process user queries and display responses.
 
 To run:
 1. Make sure the backend is running
-2. Run: python frontend/gradio_app.py
+2. Run: python frontend/app.py
 """
 import os
 import re
@@ -56,6 +56,9 @@ def check_backend_status():
 # Function to verify and save API key
 def save_api_key(api_key):
     global API_KEY
+    if not api_key:
+        return "Please enter an API key ✗"
+        
     try:
         response = requests.post(
             f"{BACKEND_URL}/api/set-api-key",
@@ -74,6 +77,9 @@ def save_api_key(api_key):
 # Function to send message to backend and get response
 def send_message(message, chatbot, api_key_input):
     global conversation_history, API_KEY
+    
+    if not message or message.strip() == "":
+        return chatbot
     
     # Use API key from input if provided, else use stored key
     current_api_key = api_key_input if api_key_input else API_KEY
@@ -120,6 +126,7 @@ def send_message(message, chatbot, api_key_input):
 def use_example(example, chatbot):
     if example != "Select an example...":
         return example, chatbot
+    return "", chatbot
 
 # Function to clear conversation
 def clear_conversation():
@@ -127,77 +134,95 @@ def clear_conversation():
     conversation_history = []
     return None, []
 
-# Create Gradio interface
+# Create Gradio interface using Gradio 5.x features
 with gr.Blocks(theme=gr.themes.Soft(primary_hue="blue")) as demo:
-    gr.Markdown("# MCP Scientific Paper Analyzer")
-    gr.Markdown("Analyze, search, and explore scientific papers using AI with Model Context Protocol (MCP)")
+    with gr.Row():
+        gr.Markdown(
+            """
+            # MCP Scientific Paper Analyzer
+            ### Analyze, search, and explore scientific papers using AI with Model Context Protocol (MCP)
+            """
+        )
     
     with gr.Row():
-        with gr.Column(scale=3):
+        # Main chat column
+        with gr.Column(scale=7):
             chatbot = gr.Chatbot(
+                value=[[None, "👋 Hello! I'm your research assistant. Ask me to search for papers, analyze citations, or get paper details!"]],
                 height=500,
-                bubble_full_width=False,
                 show_copy_button=True,
                 show_share_button=False,
-                avatar_images=(None, "https://em-content.zobj.net/thumbs/120/apple/354/robot_1f916.png")
+                avatar_images=(None, "https://em-content.zobj.net/thumbs/120/apple/354/robot_1f916.png"),
+                type="messages"  # Use messages format for Gradio 5
             )
             
-            with gr.Row():
+            # Input box
+            with gr.Group():
                 message = gr.Textbox(
                     placeholder="Ask about scientific papers, request analysis, or explore citations...",
                     lines=2,
                     show_label=False
                 )
-                submit = gr.Button("Send", variant="primary")
             
+            # Buttons
             with gr.Row():
-                clear = gr.Button("Clear Conversation")
+                submit = gr.Button("Send", variant="primary", size="lg")
+                clear = gr.Button("Clear Conversation", size="lg")
+                    
+            # Example queries
+            with gr.Accordion("Example Queries", open=False):
                 example_dropdown = gr.Dropdown(
                     choices=[
                         "Select an example...",
+                        "Search for papers about nuclear energy",
                         "Search for papers about quantum computing",
-                        "Analyze the citation graph for paper ID 1",
-                        "Get information about paper 2",
-                        "Compare papers 1 and 2",
+                        "Search for papers about wind energy",
+                        "Analyze the citation graph for paper NE1",
+                        "Get information about paper QC2",
+                        "Compare papers NE1 and NE2",
                         "What are the latest research trends in machine learning?"
                     ],
-                    label="Example queries",
+                    label="Try one of these examples",
                     value="Select an example..."
                 )
         
-        with gr.Column(scale=1):
-            gr.Markdown("### Settings")
+        # Settings and info column
+        with gr.Column(scale=3):
+            # Settings card
+            with gr.Card(title="Settings"):
+                backend_status_text = gr.Textbox(
+                    value=check_backend_status(),
+                    label="Backend Status",
+                    interactive=False
+                )
+                
+                api_key_input = gr.Textbox(
+                    value=API_KEY,
+                    label="Gemini API Key",
+                    placeholder="Enter your Gemini API key",
+                    type="password"
+                )
+                
+                save_key_button = gr.Button("Save API Key", variant="secondary")
             
-            backend_status_text = gr.Textbox(
-                value=check_backend_status(),
-                label="Backend Status",
-                interactive=False
-            )
-            
-            api_key_input = gr.Textbox(
-                value=API_KEY,
-                label="Gemini API Key",
-                placeholder="Enter your Gemini API key",
-                type="password"
-            )
-            
-            save_key_button = gr.Button("Save API Key")
-            
-            gr.Markdown("### About")
-            gr.Markdown("""
-            This application demonstrates the use of Model Context Protocol (MCP) 
-            with Google's Gemini API to create a scientific paper analysis tool.
-            
-            **Features:**
-            - Search for scientific papers
-            - Analyze citation graphs
-            - Get paper details
-            
-            **How to use:**
-            1. Enter your Gemini API key
-            2. Ask questions about scientific papers
-            3. The AI will use MCP tools to find information
-            """)
+            # About card
+            with gr.Card(title="About"):
+                gr.Markdown(
+                    """
+                    This application demonstrates the use of Model Context Protocol (MCP) 
+                    with Google's Gemini API to create a scientific paper analysis tool.
+                    
+                    **Features:**
+                    - Search for scientific papers
+                    - Analyze citation graphs
+                    - Get paper details
+                    
+                    **How to use:**
+                    1. Enter your Gemini API key
+                    2. Ask questions about scientific papers
+                    3. The AI will use MCP tools to find information
+                    """
+                )
     
     # Set up event handlers
     submit.click(send_message, [message, chatbot, api_key_input], [chatbot], queue=False).then(
@@ -222,20 +247,15 @@ with gr.Blocks(theme=gr.themes.Soft(primary_hue="blue")) as demo:
         [backend_status_text],
         queue=False
     )
-    
-    # Initialize with welcome message
-    demo.load(
-        lambda: [[None, "👋 Hello! I'm your research assistant. Ask me to search for papers, analyze citations, or get paper details!"]],
-        None,
-        [chatbot],
-        queue=False
-    )
 
 # Launch the app
 if __name__ == "__main__":
-    # Update requirements.txt to include gradio
-    print("Starting MCP Scientific Paper Analyzer with Gradio...")
+    print("=" * 70)
+    print(" MCP Scientific Paper Analyzer - Gradio Frontend")
+    print("=" * 70)
     print(f"Backend URL: {BACKEND_URL}")
-    print("Press Ctrl+C to exit")
+    print(f"API Key configured: {'Yes' if API_KEY else 'No'}")
+    print("\nStarting Gradio interface...")
     
+    # Launch with Gradio 5 options
     demo.launch(server_name="0.0.0.0", server_port=8501, share=False)
