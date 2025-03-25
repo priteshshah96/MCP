@@ -1,17 +1,18 @@
 """
-MCP Scientific Paper Analyzer - Frontend
+MCP Scientific Paper Analyzer - Gradio Frontend
 
-This Streamlit application provides a user interface for the MCP Scientific Paper Analyzer.
+This application provides a user interface for the MCP Scientific Paper Analyzer using Gradio.
 It connects to the backend API to process user queries and display responses.
 
 To run:
 1. Make sure the backend is running
-2. Run: streamlit run frontend/app.py
+2. Run: python frontend/gradio_app.py
 """
 import os
+import re
 import json
 import requests
-import streamlit as st
+import gradio as gr
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -19,156 +20,42 @@ load_dotenv()
 
 # Configuration
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+API_KEY = os.getenv("GEMINI_API_KEY", "")
 
-# Set page config
-st.set_page_config(
-    page_title="MCP Scientific Paper Analyzer",
-    page_icon="📚",
-    layout="wide",
-)
+# Initialize state
+conversation_history = []
 
-# Initialize session state
-if "conversation_history" not in st.session_state:
-    st.session_state.conversation_history = []
-
-if "tools_and_resources" not in st.session_state:
-    st.session_state.tools_and_resources = None
-
-if "api_key" not in st.session_state:
-    st.session_state.api_key = os.getenv("GEMINI_API_KEY", "")
-
-if "backend_status" not in st.session_state:
-    st.session_state.backend_status = None
-
-# Custom CSS
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 2.5rem;
-        margin-bottom: 1rem;
-    }
-    .sub-header {
-        font-size: 1.5rem;
-        margin-bottom: 1rem;
-    }
-    .user-message {
-        background-color: #f0f2f6;
-        border-radius: 10px;
-        padding: 15px;
-        margin-bottom: 20px;
-        border: 1px solid #e0e0e0;
-    }
-    .assistant-message {
-        background-color: #e9f5ff;
-        border-radius: 10px;
-        padding: 15px;
-        margin-bottom: 20px;
-        margin-top: 20px;
-        border: 1px solid #cce5ff;
-    }
-    .message-header {
-        font-weight: bold;
-        margin-bottom: 10px;
-        font-size: 1.1rem;
-    }
-    .stButton button {
-        width: 100%;
-    }
-    .api-key-input {
-        margin-bottom: 10px;
-    }
-    footer {
-        visibility: hidden;
-    }
-    /* Tool highlighting */
-    .tool-call {
-        background-color: #25c941;
-        color: #000000;
-        padding: 3px 6px;
-        border-radius: 4px;
-        font-family: monospace;
-        font-weight: bold;
-        display: inline-block;
-    }
-    /* Section formatting */
-    h3 {
-        margin-top: 20px;
-        margin-bottom: 15px;
-        font-size: 1.3rem;
-        border-bottom: 1px solid #ddd;
-        padding-bottom: 8px;
-    }
-    /* Paper formatting */
-    .paper-item {
-        border-left: 3px solid #4a86e8;
-        padding: 12px 15px;
-        margin: 15px 0;
-        background-color: rgba(74, 134, 232, 0.05);
-        border-radius: 4px;
-    }
-    /* Tool item formatting */
-    .tool-item {
-        padding: 10px;
-        margin-bottom: 12px;
-        border-left: 3px solid #25c941;
-        background-color: rgba(37, 201, 65, 0.05);
-        border-radius: 4px;
-    }
-    .tool-name {
-        font-weight: bold;
-        font-family: monospace;
-    }
-    .tool-description {
-        font-size: 0.9rem;
-        margin-top: 5px;
-    }
-    /* Resource item formatting */
-    .resource-item {
-        padding: 10px;
-        margin-bottom: 12px;
-        border-left: 3px solid #ff9800;
-        background-color: rgba(255, 152, 0, 0.05);
-        border-radius: 4px;
-    }
-    .resource-name {
-        font-weight: bold;
-        font-family: monospace;
-    }
-    /* Table formatting */
-    table {
-        width: 100%;
-        border-collapse: collapse;
-        margin: 15px 0;
-    }
-    th {
-        background-color: #f5f5f5;
-        padding: 8px;
-        text-align: left;
-        border: 1px solid #ddd;
-    }
-    td {
-        padding: 8px;
-        border: 1px solid #ddd;
-        vertical-align: top;
-    }
-</style>
-""", unsafe_allow_html=True)
+# Function to clean text
+def clean_text(text):
+    """Clean response text of any unwanted HTML or formatting"""
+    if not text:
+        return ""
+    
+    # Ensure text begins with a newline for consistent formatting
+    if not text.startswith('\n'):
+        text = '\n' + text
+    
+    # Remove HTML tags that shouldn't be in the response
+    text = re.sub(r'</?[a-zA-Z][^>]*>', '', text)
+    
+    # Remove code blocks markers but preserve content
+    text = text.replace('```', '')
+    
+    return text
 
 # Function to check backend status
 def check_backend_status():
     try:
         response = requests.get(f"{BACKEND_URL}/health", timeout=3)
         if response.status_code == 200:
-            return True
-        return False
+            return "Backend is running ✓"
+        return "Backend not connected ✗"
     except Exception:
-        return False
+        return "Backend not connected ✗"
 
-# Update backend status
-st.session_state.backend_status = check_backend_status()
-
-# Function to verify API key
-def verify_api_key(api_key):
+# Function to verify and save API key
+def save_api_key(api_key):
+    global API_KEY
     try:
         response = requests.post(
             f"{BACKEND_URL}/api/set-api-key",
@@ -176,290 +63,179 @@ def verify_api_key(api_key):
             timeout=5
         )
         data = response.json()
-        return data["success"], data["message"]
+        if data["success"]:
+            API_KEY = api_key
+            return "API key saved successfully ✓"
+        else:
+            return f"Invalid API key: {data['message']} ✗"
     except Exception as e:
-        return False, f"Error connecting to backend: {str(e)}"
+        return f"Error connecting to backend: {str(e)} ✗"
 
-# Function to send chat message
-def send_chat_message(message, conversation_history, api_key=None):
+# Function to send message to backend and get response
+def send_message(message, chatbot, api_key_input):
+    global conversation_history, API_KEY
+    
+    # Use API key from input if provided, else use stored key
+    current_api_key = api_key_input if api_key_input else API_KEY
+    
+    # Check if backend is available
+    backend_status = check_backend_status()
+    if "not connected" in backend_status:
+        return chatbot + [
+            [message, f"Error: Backend is not connected. Make sure the backend server is running at {BACKEND_URL}."]
+        ]
+    
+    # Send request to backend
     try:
         request_data = {
             "message": message,
-            "conversation_history": conversation_history
+            "conversation_history": conversation_history,
+            "api_key": current_api_key
         }
-        
-        # Add API key if provided
-        if api_key:
-            request_data["api_key"] = api_key
         
         response = requests.post(
             f"{BACKEND_URL}/api/chat",
             json=request_data,
-            timeout=60  # Longer timeout for chat responses
+            timeout=60
         )
         
         if response.status_code == 200:
-            return response.json(), None
+            data = response.json()
+            conversation_history = data["conversation_history"]
+            # Clean response text
+            response_text = clean_text(data["response"])
+            return chatbot + [[message, response_text]]
         else:
-            return None, f"Error: {response.text}"
+            error_message = f"Error: {response.text}"
+            return chatbot + [[message, error_message]]
     
     except requests.exceptions.ConnectionError:
-        return None, f"Connection error: Could not connect to {BACKEND_URL}. Is the backend server running?"
+        connection_error = f"Connection error: Could not connect to {BACKEND_URL}. Is the backend server running?"
+        return chatbot + [[message, connection_error]]
     except Exception as e:
-        return None, f"Error: {str(e)}"
+        general_error = f"Error: {str(e)}"
+        return chatbot + [[message, general_error]]
 
-# Function to fetch tools and resources
-def fetch_tools_and_resources():
-    try:
-        tools_response = requests.get(f"{BACKEND_URL}/api/tools", timeout=5)
-        resources_response = requests.get(f"{BACKEND_URL}/api/resources", timeout=5)
-        
-        if tools_response.status_code == 200 and resources_response.status_code == 200:
-            tools = tools_response.json().get("tools", [])
-            resources = resources_response.json().get("resources", [])
-            return {"tools": tools, "resources": resources}
-        else:
-            return None
-    except Exception:
-        return None
+# Function to handle example selection
+def use_example(example, chatbot):
+    if example != "Select an example...":
+        return example, chatbot
 
-# Sidebar
-with st.sidebar:
-    st.markdown("<div class='sub-header'>Settings</div>", unsafe_allow_html=True)
-    
-    # Backend status indicator
-    if st.session_state.backend_status:
-        st.success("✅ Backend is running")
-    else:
-        st.error("❌ Backend not connected")
-        st.info(f"Make sure the backend is running at {BACKEND_URL}")
-    
-    # API Key input
-    st.markdown("<div class='api-key-input'>", unsafe_allow_html=True)
-    api_key = st.text_input(
-        "Gemini API Key",
-        value=st.session_state.api_key,
-        type="password",
-        help="Get your API key from https://aistudio.google.com/app/apikey"
-    )
-    
-    # Save API Key button
-    if st.button("Save API Key"):
-        if api_key:
-            with st.spinner("Verifying API key..."):
-                success, message = verify_api_key(api_key)
-                if success:
-                    st.session_state.api_key = api_key
-                    st.success("✅ API key saved successfully")
-                else:
-                    st.error(f"❌ {message}")
-        else:
-            st.warning("Please enter an API key")
-    st.markdown("</div>", unsafe_allow_html=True)
-    
-    # Clear conversation button
-    if st.button("Clear Conversation"):
-        st.session_state.conversation_history = []
-        st.rerun()
-    
-    # Fetch tools and resources
-    if st.session_state.backend_status and not st.session_state.tools_and_resources:
-        with st.spinner("Loading tools and resources..."):
-            st.session_state.tools_and_resources = fetch_tools_and_resources()
-    
-    # Display tools and resources
-    if st.session_state.tools_and_resources:
-        with st.expander("Available Tools", expanded=False):
-            tools = st.session_state.tools_and_resources.get("tools", [])
-            if tools:
-                for tool in tools:
-                    description = ""
-                    if tool == "search_papers":
-                        description = "Search for scientific papers based on keywords"
-                    elif tool == "analyze_citation_graph":
-                        description = "Analyze citation relationships for a specific paper"
-                    elif tool == "get_paper":
-                        description = "Retrieve detailed information about a paper"
-                    
-                    st.markdown(f"""
-                    <div class="tool-item">
-                        <div class="tool-name">{tool}</div>
-                        <div class="tool-description">{description}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-            else:
-                st.info("No tools available")
-        
-        with st.expander("Available Resources", expanded=False):
-            resources = st.session_state.tools_and_resources.get("resources", [])
-            if resources:
-                for resource in resources:
-                    description = ""
-                    if "paper" in resource:
-                        description = "Access paper details by ID"
-                    
-                    st.markdown(f"""
-                    <div class="resource-item">
-                        <div class="resource-name">{resource}</div>
-                        <div class="tool-description">{description}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-            else:
-                st.info("No resources available")
-    
-    # About section
-    with st.expander("About", expanded=False):
-        st.markdown("""
-        ## MCP Scientific Paper Analyzer
-        
-        This application demonstrates the use of Model Context Protocol (MCP) 
-        with Google's Gemini API to create a scientific paper analysis tool.
-        
-        ### Features:
-        - Search for scientific papers
-        - Analyze citation graphs
-        - Get paper details
-        
-        ### How to use:
-        1. Enter your Gemini API key in the sidebar
-        2. Ask questions about scientific papers
-        3. The AI will use MCP tools to find information and present it to you
-        
-        ### Example queries:
-        - "Search for papers about quantum computing"
-        - "Analyze the citation graph for paper ID 1"
-        - "Get information about paper 2"
-        """)
+# Function to clear conversation
+def clear_conversation():
+    global conversation_history
+    conversation_history = []
+    return None, []
 
-# Main content
-st.markdown("<div class='main-header'>MCP Scientific Paper Analyzer</div>", unsafe_allow_html=True)
-st.markdown("Analyze, search, and explore scientific papers using AI with Model Context Protocol (MCP)")
-
-# Display conversation history
-chat_container = st.container()
-
-with chat_container:
-    if not st.session_state.conversation_history:
-        st.info("👋 Hello! I'm your research assistant. Ask me to search for papers, analyze citations, or get paper details!")
+# Create Gradio interface
+with gr.Blocks(theme=gr.themes.Soft(primary_hue="blue")) as demo:
+    gr.Markdown("# MCP Scientific Paper Analyzer")
+    gr.Markdown("Analyze, search, and explore scientific papers using AI with Model Context Protocol (MCP)")
     
-    # Display the conversation with improved formatting
-    for message in st.session_state.conversation_history:
-        if message["role"] == "user":
-            st.markdown(f"""
-            <div class="user-message">
-                <div class="message-header">You:</div>
-                {message['content']}
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            # Process the assistant message to ensure proper display
-            content = message['content']
-            
-            # Ensure content begins with a newline for consistent formatting
-            if not content.startswith('\n'):
-                content = '\n' + content
-            
-            # Clean up any HTML artifacts
-            content = content.replace('</div>', '')
-            content = content.replace('```', '')
-            
-            # Highlight function calls for better readability
-            content = content.replace(
-                'search_papers(',
-                '<span class="tool-call">search_papers('
-            )
-            content = content.replace(
-                'analyze_citation_graph(',
-                '<span class="tool-call">analyze_citation_graph('
-            )
-            content = content.replace(
-                'get_paper(',
-                '<span class="tool-call">get_paper('
+    with gr.Row():
+        with gr.Column(scale=3):
+            chatbot = gr.Chatbot(
+                height=500,
+                bubble_full_width=False,
+                show_copy_button=True,
+                show_share_button=False,
+                avatar_images=(None, "https://em-content.zobj.net/thumbs/120/apple/354/robot_1f916.png")
             )
             
-            # Make sure all spans are closed properly
-            if content.count('<span class="tool-call">') > content.count('</span>'):
-                remaining = content.count('<span class="tool-call">') - content.count('</span>')
-                content = content + ('</span>' * remaining)
-            
-            st.markdown(f"""
-            <div class="assistant-message">
-                <div class="message-header">Assistant:</div>
-                {content}
-            </div>
-            """, unsafe_allow_html=True)
-
-# Input form
-with st.form("chat_form", clear_on_submit=True):
-    user_message = st.text_area(
-        "Your message:",
-        height=100, 
-        placeholder="Ask about scientific papers, request analysis, or explore citations..."
-    )
-    
-    col1, col2 = st.columns([5, 1])
-    
-    with col1:
-        example_queries = st.selectbox(
-            "Example queries:",
-            [
-                "Select an example...",
-                "Search for papers about quantum computing",
-                "Analyze the citation graph for paper ID 1",
-                "Get information about paper 2",
-                "Compare papers 1 and 2",
-                "What are the latest research trends in machine learning?"
-            ]
-        )
-    
-    with col2:
-        submit_button = st.form_submit_button("Send")
-    
-    # Handle example selection
-    if example_queries != "Select an example..." and not user_message:
-        user_message = example_queries
-    
-    # Process submission
-    if submit_button and user_message:
-        if not st.session_state.backend_status:
-            st.error("Backend is not connected. Please make sure the backend server is running.")
-        else:
-            # Show spinner while waiting for response
-            with st.spinner("Thinking..."):
-                # Send request to backend
-                data, error = send_chat_message(
-                    user_message, 
-                    st.session_state.conversation_history,
-                    st.session_state.api_key
+            with gr.Row():
+                message = gr.Textbox(
+                    placeholder="Ask about scientific papers, request analysis, or explore citations...",
+                    lines=2,
+                    show_label=False
                 )
-                
-                if error:
-                    st.error(error)
-                else:
-                    # Update conversation history
-                    st.session_state.conversation_history = data["conversation_history"]
-                    
-                    # Force refresh to display updated conversation
-                    st.rerun()
-
-# Add footer with instructions if conversation is empty
-if not st.session_state.conversation_history:
-    st.markdown("""
-    ---
-    ### Example queries to try:
+                submit = gr.Button("Send", variant="primary")
+            
+            with gr.Row():
+                clear = gr.Button("Clear Conversation")
+                example_dropdown = gr.Dropdown(
+                    choices=[
+                        "Select an example...",
+                        "Search for papers about quantum computing",
+                        "Analyze the citation graph for paper ID 1",
+                        "Get information about paper 2",
+                        "Compare papers 1 and 2",
+                        "What are the latest research trends in machine learning?"
+                    ],
+                    label="Example queries",
+                    value="Select an example..."
+                )
+        
+        with gr.Column(scale=1):
+            gr.Markdown("### Settings")
+            
+            backend_status_text = gr.Textbox(
+                value=check_backend_status(),
+                label="Backend Status",
+                interactive=False
+            )
+            
+            api_key_input = gr.Textbox(
+                value=API_KEY,
+                label="Gemini API Key",
+                placeholder="Enter your Gemini API key",
+                type="password"
+            )
+            
+            save_key_button = gr.Button("Save API Key")
+            
+            gr.Markdown("### About")
+            gr.Markdown("""
+            This application demonstrates the use of Model Context Protocol (MCP) 
+            with Google's Gemini API to create a scientific paper analysis tool.
+            
+            **Features:**
+            - Search for scientific papers
+            - Analyze citation graphs
+            - Get paper details
+            
+            **How to use:**
+            1. Enter your Gemini API key
+            2. Ask questions about scientific papers
+            3. The AI will use MCP tools to find information
+            """)
     
-    - **Search for papers:** "Find papers about quantum computing"
-    - **Analyze citations:** "Analyze the citation graph for paper ID 1"
-    - **Get paper details:** "Tell me about paper 2"
-    - **Compare papers:** "Compare the findings of papers 1 and 2"
+    # Set up event handlers
+    submit.click(send_message, [message, chatbot, api_key_input], [chatbot], queue=False).then(
+        lambda: "", None, [message], queue=False
+    )
+    message.submit(send_message, [message, chatbot, api_key_input], [chatbot], queue=False).then(
+        lambda: "", None, [message], queue=False
+    )
     
-    The system will use MCP tools to find information and present it to you.
-    """)
+    clear.click(clear_conversation, None, [message, chatbot], queue=False)
+    
+    example_dropdown.change(
+        use_example, 
+        [example_dropdown, chatbot], 
+        [message, chatbot], 
+        queue=False
+    )
+    
+    save_key_button.click(
+        save_api_key,
+        [api_key_input],
+        [backend_status_text],
+        queue=False
+    )
+    
+    # Initialize with welcome message
+    demo.load(
+        lambda: [[None, "👋 Hello! I'm your research assistant. Ask me to search for papers, analyze citations, or get paper details!"]],
+        None,
+        [chatbot],
+        queue=False
+    )
 
-# Add a footer crediting original author
-st.markdown("""
----
-<div style="text-align: center; color: #888; font-size: 0.8rem;">
-    Created with ❤️ using MCP | Fork this project on GitHub
-</div>
-""", unsafe_allow_html=True)
+# Launch the app
+if __name__ == "__main__":
+    # Update requirements.txt to include gradio
+    print("Starting MCP Scientific Paper Analyzer with Gradio...")
+    print(f"Backend URL: {BACKEND_URL}")
+    print("Press Ctrl+C to exit")
+    
+    demo.launch(server_name="0.0.0.0", server_port=8501, share=False)

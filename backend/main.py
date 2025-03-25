@@ -11,6 +11,7 @@ To run:
 """
 import os
 import asyncio
+import re
 from typing import Dict, Any, List, Optional
 
 from fastapi import FastAPI, HTTPException, Depends, Header, Request, Response
@@ -59,6 +60,24 @@ class ApiKeyRequest(BaseModel):
 class ApiKeyResponse(BaseModel):
     success: bool
     message: str
+
+# Function to clean response text from HTML artifacts
+def clean_response_text(text):
+    """Clean HTML artifacts and other unwanted elements from response text."""
+    if not text:
+        return ""
+    
+    # Ensure text begins with a newline for consistent formatting
+    if not text.startswith('\n'):
+        text = '\n' + text
+    
+    # Remove HTML tags that shouldn't be in the response
+    text = re.sub(r'</?(div|span|p|br)[^>]*>', '', text)
+    
+    # Remove code blocks markers but preserve content
+    text = text.replace('```', '')
+    
+    return text
 
 # Add tools to MCP - SIMPLIFIED to return strings
 @mcp_server.tool()
@@ -137,18 +156,30 @@ def get_paper(paper_id: str) -> str:
 ### Latest Research on Quantum Computing (2024)
 - **Authors**: Smith, J., Johnson, A.
 - **Journal**: Journal of Advanced Science
-- **Abstract**: This paper explores recent developments in quantum computing.
-- **Keywords**: quantum algorithms, quantum hardware, NISQ era
+- **Abstract**: This paper explores recent developments in quantum computing, focusing on practical applications of quantum algorithms in the NISQ (Noisy Intermediate-Scale Quantum) era. The authors demonstrate a novel approach to quantum error correction that improves qubit coherence time by up to 45%.
+- **Keywords**: quantum algorithms, quantum hardware, NISQ era, error correction
 - **DOI**: 10.1234/js.2024.01.123
+- **Publication Date**: January 2024
+- **Key Findings**: 
+  1. Novel error correction technique improves coherence time
+  2. Demonstration of a 32-qubit quantum simulation of molecular structures
+  3. Benchmark results show 2.5x speedup compared to previous methods
 """,
         "2": f"""## Paper Details: Paper 2
 
 ### A Review of Quantum Computing Studies (2023)
 - **Authors**: Brown, M., Davis, L.
 - **Journal**: Scientific Reviews
-- **Abstract**: A comprehensive review of the last decade of research on quantum computing.
-- **Keywords**: review, quantum computing, quantum supremacy
+- **Abstract**: A comprehensive review of the last decade of research on quantum computing, covering major theoretical advancements, hardware implementations, and emerging applications. This paper synthesizes findings from over 200 studies to provide a state-of-the-art overview of the field.
+- **Keywords**: review, quantum computing, quantum supremacy, quantum algorithms
 - **DOI**: 10.5678/sr.2023.12.456
+- **Publication Date**: December 2023
+- **Key Topics Covered**:
+  1. Evolution of quantum hardware platforms
+  2. Progress in quantum algorithms and complexity theory
+  3. Quantum machine learning applications
+  4. Challenges in scaling quantum systems
+  5. Future research directions
 """
     }
     
@@ -348,20 +379,26 @@ async def chat(request: ChatRequest, req: Request):
                 chat.history.append({"role": "model", "parts": [msg["content"]]})
         
         # Format a system message with clear instructions
+
         system_message = """You are a helpful research assistant that specializes in scientific papers.
 
-You have access to the following tools:
-1. search_papers(query) - Search for papers matching a query
-2. get_paper(paper_id) - Get detailed information about a paper with a specific ID
-3. analyze_citation_graph(paper_id) - Analyze the citation relationships for a paper
+        You have access to the following tools:
+        1. search_papers(query) - Search for papers matching a query
+        2. get_paper(paper_id) - Get detailed information about a paper with a specific ID
+        3. analyze_citation_graph(paper_id) - Analyze the citation relationships for a paper
 
-IMPORTANT GUIDELINES:
-- When users ask to search for papers, use search_papers(query)
-- When users refer to "paper 1" or "paper 2", these are the IDs you should use with get_paper() or analyze_citation_graph()
-- Always reply in clear, concise language focusing on the information requested
-- Format your responses with clear headings and bullet points
-- Don't include HTML tags or div tags in your responses
-"""
+        IMPORTANT GUIDELINES:
+        - When users ask to search for papers, use search_papers(query)
+        - When users refer to "paper 1" or "paper 2", these are the IDs you should use with get_paper() or analyze_citation_graph()
+        - Always reply in clear, concise language focusing on the information requested
+        - Format your responses with clear headings and bullet points
+        - DO NOT include ANY HTML tags in your responses - no div, span, button, p, code, or any other HTML
+        - Do not use markdown code blocks with triple backticks
+        - Do not mention or reference any HTML elements or components in your text
+        - When mentioning tool calls, simply write the function name with parentheses, e.g. get_paper(1)
+        - Always provide actual information from the tools, never say a function is a "stub" or not implemented
+        - If a user asks for comparison or details, always use the appropriate tools to retrieve the information
+        """
         
         # Send initial message with the user query
         try:
@@ -389,11 +426,13 @@ IMPORTANT GUIDELINES:
                 )
         
         # Process any tool calls
+        handled_tool_call = False
+        all_tool_results = []
+        
         try:
-            # Check if there are function calls in the response
+            # Extract function calls based on response structure
             function_calls = []
             
-            # Extract function calls based on response structure
             if hasattr(response, "candidates"):
                 for candidate in response.candidates:
                     if hasattr(candidate, "content") and hasattr(candidate.content, "parts"):
@@ -407,24 +446,34 @@ IMPORTANT GUIDELINES:
                     if hasattr(part, "function_call"):
                         function_calls.append(part.function_call)
             
-            # Handle each function call - SIMPLIFIED approach
+            # Process each function call
             for function_call in function_calls:
+                handled_tool_call = True
                 function_name = function_call.name
-                args = function_call.args
                 
+                # Extract arguments safely
+                try:
+                    args = function_call.args
+                except:
+                    args = {}
+                
+                # Call the appropriate function based on name
                 if function_name == "search_papers":
                     query = args.get("query", "")
-                    result = search_papers(query)  # This now returns a formatted string
+                    result = search_papers(query)
+                    all_tool_results.append(result)
                     response = chat.send_message(result)
                 
                 elif function_name == "get_paper":
-                    paper_id = args.get("paper_id", "")
-                    result = get_paper(paper_id)  # This now returns a formatted string
+                    paper_id = args.get("paper_id", "").replace("'", "").replace('"', "")
+                    result = get_paper(paper_id)
+                    all_tool_results.append(result)
                     response = chat.send_message(result)
                 
                 elif function_name == "analyze_citation_graph":
-                    paper_id = args.get("paper_id", "")
-                    result = analyze_citation_graph(paper_id)  # This now returns a formatted string
+                    paper_id = args.get("paper_id", "").replace("'", "").replace('"', "")
+                    result = analyze_citation_graph(paper_id)
+                    all_tool_results.append(result)
                     response = chat.send_message(result)
         
         except Exception as e:
@@ -446,13 +495,13 @@ IMPORTANT GUIDELINES:
             except Exception:
                 response_text = "I encountered an issue processing your request. Please try again."
         
-        # Clean up any HTML artifacts that might appear in the response
-        response_text = response_text.replace("</div>", "")
-        response_text = response_text.replace("```", "")
+        # If we handled a tool call but no results were returned to the model,
+        # append the tool results directly to the response
+        if handled_tool_call and all_tool_results and not any(result in response_text for result in all_tool_results):
+            response_text += "\n\n" + "\n\n".join(all_tool_results)
         
-        # Ensure proper formatting for the UI
-        if not response_text.startswith("\n"):
-            response_text = "\n" + response_text
+        # Clean up any HTML artifacts that might appear in the response
+        response_text = clean_response_text(response_text)
         
         # Update conversation history
         new_history = request.conversation_history.copy()
