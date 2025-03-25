@@ -10,7 +10,6 @@ To run:
 """
 import os
 import re
-import json
 import requests
 import gradio as gr
 from dotenv import load_dotenv
@@ -37,9 +36,6 @@ def clean_text(text):
     
     # Remove HTML tags that shouldn't be in the response
     text = re.sub(r'</?[a-zA-Z][^>]*>', '', text)
-    
-    # Remove code blocks markers but preserve content
-    text = text.replace('```', '')
     
     return text
 
@@ -87,9 +83,7 @@ def send_message(message, chatbot, api_key_input):
     # Check if backend is available
     backend_status = check_backend_status()
     if "not connected" in backend_status:
-        return chatbot + [
-            [message, f"Error: Backend is not connected. Make sure the backend server is running at {BACKEND_URL}."]
-        ]
+        return chatbot + [[message, f"Error: Backend is not connected. Make sure the backend server is running at {BACKEND_URL}."]]
     
     # Send request to backend
     try:
@@ -134,8 +128,8 @@ def clear_conversation():
     conversation_history = []
     return None, []
 
-# Create Gradio interface using Gradio 5.x features
-with gr.Blocks(theme=gr.themes.Soft(primary_hue="blue")) as demo:
+# Create Gradio interface
+with gr.Blocks() as demo:
     with gr.Row():
         gr.Markdown(
             """
@@ -151,9 +145,6 @@ with gr.Blocks(theme=gr.themes.Soft(primary_hue="blue")) as demo:
                 value=[[None, "👋 Hello! I'm your research assistant. Ask me to search for papers, analyze citations, or get paper details!"]],
                 height=500,
                 show_copy_button=True,
-                show_share_button=False,
-                avatar_images=(None, "https://em-content.zobj.net/thumbs/120/apple/354/robot_1f916.png"),
-                type="messages"  # Use messages format for Gradio 5
             )
             
             # Input box
@@ -166,21 +157,21 @@ with gr.Blocks(theme=gr.themes.Soft(primary_hue="blue")) as demo:
             
             # Buttons
             with gr.Row():
-                submit = gr.Button("Send", variant="primary", size="lg")
-                clear = gr.Button("Clear Conversation", size="lg")
+                submit = gr.Button("Send", variant="primary")
+                clear = gr.Button("Clear Conversation")
                     
             # Example queries
             with gr.Accordion("Example Queries", open=False):
                 example_dropdown = gr.Dropdown(
                     choices=[
                         "Select an example...",
-                        "Search for papers about nuclear energy",
+                        "Search for papers about machine learning",
+                        "Search for papers about climate change",
                         "Search for papers about quantum computing",
-                        "Search for papers about wind energy",
-                        "Analyze the citation graph for paper NE1",
-                        "Get information about paper QC2",
-                        "Compare papers NE1 and NE2",
-                        "What are the latest research trends in machine learning?"
+                        "Analyze the citation graph for paper P1",
+                        "Get information about paper P2",
+                        "Compare papers P1 and P2",
+                        "What are the latest research trends in artificial intelligence?"
                     ],
                     label="Try one of these examples",
                     value="Select an example..."
@@ -188,8 +179,9 @@ with gr.Blocks(theme=gr.themes.Soft(primary_hue="blue")) as demo:
         
         # Settings and info column
         with gr.Column(scale=3):
-            # Settings card
-            with gr.Card(title="Settings"):
+            # Settings section
+            with gr.Group():
+                gr.Markdown("## Settings")
                 backend_status_text = gr.Textbox(
                     value=check_backend_status(),
                     label="Backend Status",
@@ -203,10 +195,11 @@ with gr.Blocks(theme=gr.themes.Soft(primary_hue="blue")) as demo:
                     type="password"
                 )
                 
-                save_key_button = gr.Button("Save API Key", variant="secondary")
+                save_key_button = gr.Button("Save API Key")
             
-            # About card
-            with gr.Card(title="About"):
+            # About section
+            with gr.Group():
+                gr.Markdown("## About")
                 gr.Markdown(
                     """
                     This application demonstrates the use of Model Context Protocol (MCP) 
@@ -225,27 +218,25 @@ with gr.Blocks(theme=gr.themes.Soft(primary_hue="blue")) as demo:
                 )
     
     # Set up event handlers
-    submit.click(send_message, [message, chatbot, api_key_input], [chatbot], queue=False).then(
-        lambda: "", None, [message], queue=False
+    submit.click(send_message, [message, chatbot, api_key_input], [chatbot]).then(
+        lambda: "", None, [message]
     )
-    message.submit(send_message, [message, chatbot, api_key_input], [chatbot], queue=False).then(
-        lambda: "", None, [message], queue=False
+    message.submit(send_message, [message, chatbot, api_key_input], [chatbot]).then(
+        lambda: "", None, [message]
     )
     
-    clear.click(clear_conversation, None, [message, chatbot], queue=False)
+    clear.click(clear_conversation, None, [message, chatbot])
     
     example_dropdown.change(
         use_example, 
         [example_dropdown, chatbot], 
-        [message, chatbot], 
-        queue=False
+        [message, chatbot]
     )
     
     save_key_button.click(
         save_api_key,
         [api_key_input],
-        [backend_status_text],
-        queue=False
+        [backend_status_text]
     )
 
 # Launch the app
@@ -257,5 +248,5 @@ if __name__ == "__main__":
     print(f"API Key configured: {'Yes' if API_KEY else 'No'}")
     print("\nStarting Gradio interface...")
     
-    # Launch with Gradio 5 options
+    # Launch with Gradio options - simplified for compatibility
     demo.launch(server_name="0.0.0.0", server_port=8501, share=False)

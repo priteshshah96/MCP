@@ -2,7 +2,7 @@
 MCP Scientific Paper Analyzer - Backend
 
 This application demonstrates the use of Model Context Protocol (MCP) with Google's Gemini API
-to create a scientific paper analysis tool.
+to create a scientific paper analysis tool with Semantic Scholar integration.
 
 To run:
 1. Create a .env file with your GEMINI_API_KEY (see .env.example)
@@ -10,16 +10,14 @@ To run:
 3. Run: python backend/main.py
 """
 import os
-import asyncio
 import re
 import json
-import random
-from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
+import requests
+from datetime import datetime
+from typing import Dict, List, Any, Optional
 
-from fastapi import FastAPI, HTTPException, Depends, Header, Request, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 import google.generativeai as genai
@@ -64,109 +62,6 @@ class ApiKeyResponse(BaseModel):
     success: bool
     message: str
 
-# Scientific domains for better paper generation
-SCIENTIFIC_DOMAINS = {
-    "Physics": ["Quantum Physics", "Astrophysics", "Particle Physics", "Condensed Matter", "Nuclear Physics"],
-    "Biology": ["Molecular Biology", "Genetics", "Neuroscience", "Ecology", "Microbiology"],
-    "Chemistry": ["Organic Chemistry", "Inorganic Chemistry", "Biochemistry", "Materials Science", "Physical Chemistry"],
-    "Computer Science": ["Artificial Intelligence", "Machine Learning", "Computer Vision", "Natural Language Processing", "Quantum Computing"],
-    "Medicine": ["Immunology", "Oncology", "Cardiology", "Neurology", "Epidemiology"],
-    "Environmental Science": ["Climate Change", "Ecology", "Conservation", "Renewable Energy", "Sustainability"],
-    "Mathematics": ["Number Theory", "Algebra", "Topology", "Applied Mathematics", "Combinatorics"],
-    "Engineering": ["Electrical Engineering", "Mechanical Engineering", "Civil Engineering", "Chemical Engineering", "Biomedical Engineering"]
-}
-
-# Paper database (in-memory for demo)
-PAPERS_DB = {
-    # Nuclear Energy Papers
-    "NE1": {
-        "id": "NE1",
-        "title": "Recent Advances in Nuclear Fusion Containment",
-        "authors": ["Takahashi, M.", "Johnson, R.", "Kuznetsov, A."],
-        "journal": "Journal of Nuclear Engineering",
-        "abstract": "This paper explores recent technological advances in magnetic containment systems for nuclear fusion reactions, with particular focus on improvements to the tokamak design that have led to longer plasma containment times and higher energy efficiency.",
-        "year": 2023,
-        "keywords": ["nuclear fusion", "tokamak", "magnetic containment", "plasma physics"],
-        "doi": "10.1234/jne.2023.05.127",
-        "citations": 24,
-        "related_papers": ["NE2", "NE4"]
-    },
-    "NE2": {
-        "id": "NE2",
-        "title": "Safety Protocols in Modern Nuclear Energy Facilities",
-        "authors": ["Smith, L.", "Garcia, C.", "Wong, H."],
-        "journal": "International Journal of Energy Safety",
-        "abstract": "A comprehensive review of safety protocols implemented in nuclear energy facilities over the past decade, analyzing their effectiveness in preventing incidents and comparing international regulatory frameworks.",
-        "year": 2022,
-        "keywords": ["nuclear safety", "regulatory compliance", "risk assessment", "emergency protocols"],
-        "doi": "10.5678/ijes.2022.11.089",
-        "citations": 37,
-        "related_papers": ["NE3", "NE5"]
-    },
-    "NE3": {
-        "id": "NE3",
-        "title": "Environmental Impact Assessment of Nuclear Waste Storage Solutions",
-        "authors": ["Patel, S.", "Müller, J.", "Dubois, F."],
-        "journal": "Environmental Science and Technology",
-        "abstract": "This study evaluates the long-term environmental impact of various nuclear waste storage solutions, including deep geological repositories and dry cask storage. The paper presents a multi-criteria analysis incorporating geological stability, radiation containment, and monitoring capabilities.",
-        "year": 2023,
-        "keywords": ["nuclear waste", "environmental impact", "geological repositories", "radiation containment"],
-        "doi": "10.9012/est.2023.02.043",
-        "citations": 18,
-        "related_papers": ["NE2", "NE5"]
-    },
-    "NE4": {
-        "id": "NE4",
-        "title": "Next-Generation Small Modular Reactors: Design and Economics",
-        "authors": ["Lee, J.", "Novak, P.", "Anderson, T."],
-        "journal": "Energy Policy and Economics",
-        "abstract": "An analysis of the economic viability of small modular reactors (SMRs) as compared to traditional nuclear plants and other clean energy sources. The paper explores design innovations, deployment strategies, and potential market adoption scenarios.",
-        "year": 2024,
-        "keywords": ["small modular reactors", "nuclear economics", "energy policy", "clean energy"],
-        "doi": "10.3456/epe.2024.01.018",
-        "citations": 9,
-        "related_papers": ["NE1", "NE5"]
-    },
-    "NE5": {
-        "id": "NE5",
-        "title": "Public Perception and Acceptance of Nuclear Energy Post-Fukushima",
-        "authors": ["Hernandez, E.", "Ivanova, M.", "Okamoto, T."],
-        "journal": "Risk Analysis and Society",
-        "abstract": "This paper examines the evolution of public perception and acceptance of nuclear energy in various countries following the Fukushima Daiichi nuclear disaster. Using longitudinal survey data, the authors identify key factors influencing risk perception and propose strategies for science communication.",
-        "year": 2022,
-        "keywords": ["risk perception", "nuclear accidents", "public opinion", "science communication"],
-        "doi": "10.7890/ras.2022.08.112",
-        "citations": 42,
-        "related_papers": ["NE2", "NE3"]
-    },
-    
-    # Quantum Computing Papers
-    "QC1": {
-        "id": "QC1",
-        "title": "Practical Quantum Error Correction in NISQ Devices",
-        "authors": ["Smith, J.", "Johnson, A.", "Zhao, L."],
-        "journal": "Journal of Advanced Quantum Computing",
-        "abstract": "This paper explores recent developments in quantum computing, focusing on practical applications of quantum algorithms in the NISQ (Noisy Intermediate-Scale Quantum) era. The authors demonstrate a novel approach to quantum error correction that improves qubit coherence time by up to 45%.",
-        "year": 2024,
-        "keywords": ["quantum algorithms", "quantum hardware", "NISQ era", "error correction"],
-        "doi": "10.1234/jaqc.2024.01.123",
-        "citations": 15,
-        "related_papers": ["QC2", "QC4"]
-    },
-    "QC2": {
-        "id": "QC2",
-        "title": "A Comprehensive Review of Quantum Computing Progress",
-        "authors": ["Brown, M.", "Davis, L.", "Thompson, R."],
-        "journal": "Scientific Reviews in Computing",
-        "abstract": "A comprehensive review of the last decade of research on quantum computing, covering major theoretical advancements, hardware implementations, and emerging applications. This paper synthesizes findings from over 200 studies to provide a state-of-the-art overview of the field.",
-        "year": 2023,
-        "keywords": ["review", "quantum computing", "quantum supremacy", "quantum algorithms"],
-        "doi": "10.5678/src.2023.12.456",
-        "citations": 45,
-        "related_papers": ["QC1", "QC3"]
-    }
-}
-
 # Function to clean response text from HTML artifacts
 def clean_response_text(text):
     """Clean HTML artifacts and other unwanted elements from response text."""
@@ -185,153 +80,11 @@ def clean_response_text(text):
     
     return text
 
-# Function to generate paper IDs for a domain
-def generate_paper_id(domain_prefix):
-    """Generate a unique paper ID for a given domain prefix."""
-    existing_ids = [pid for pid in PAPERS_DB.keys() if pid.startswith(domain_prefix)]
-    next_num = len(existing_ids) + 1
-    return f"{domain_prefix}{next_num}"
-
-# Function to generate realistic paper data
-def generate_paper_data(query, domain_prefix="GEN"):
-    """Generate realistic paper data based on a query."""
-    # Determine the domain and subdomain
-    domain = "Computer Science"  # Default domain
-    subdomain = "Artificial Intelligence"  # Default subdomain
-    
-    # Try to map the query to a domain
-    for d, subdomains in SCIENTIFIC_DOMAINS.items():
-        for sd in subdomains:
-            if sd.lower() in query.lower() or d.lower() in query.lower():
-                domain = d
-                subdomain = sd
-                break
-    
-    # Get current year
-    current_year = datetime.now().year
-    
-    # Generate paper ID
-    paper_id = generate_paper_id(domain_prefix)
-    
-    # Generate author names
-    surnames = ["Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Rodriguez", 
-                "Martinez", "Hernandez", "Lopez", "Gonzalez", "Wilson", "Anderson", "Thomas", "Taylor", 
-                "Moore", "Jackson", "Martin", "Lee", "Perez", "Thompson", "White", "Harris", "Sanchez", 
-                "Clark", "Ramirez", "Lewis", "Robinson", "Walker", "Young", "Allen", "King", "Wright", 
-                "Scott", "Torres", "Nguyen", "Hill", "Flores", "Green", "Adams", "Nelson", "Baker", 
-                "Hall", "Rivera", "Campbell", "Mitchell", "Carter", "Roberts", "Chen", "Kumar", "Singh",
-                "Patil", "Muller", "Schmidt", "Fischer", "Weber", "Schneider", "Meyer", "Wagner", "Zhou",
-                "Wang", "Liu", "Zhang", "Li", "Khan", "Ivanov", "Smirnov", "Petrov", "Kuznetsov"]
-    
-    initials = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    
-    # Generate 2-3 authors
-    num_authors = random.randint(2, 3)
-    authors = []
-    
-    for _ in range(num_authors):
-        surname = random.choice(surnames)
-        initial = random.choice(initials)
-        authors.append(f"{surname}, {initial}.")
-    
-    # Journals by domain
-    journals = {
-        "Physics": ["Physical Review Letters", "Journal of Physics", "Nature Physics", "Physics Today", "European Physical Journal"],
-        "Biology": ["Cell", "Nature Biotechnology", "PLOS Biology", "Molecular Biology and Evolution", "Journal of Theoretical Biology"],
-        "Chemistry": ["Journal of the American Chemical Society", "Chemical Science", "Angewandte Chemie", "Chemistry - A European Journal"],
-        "Computer Science": ["Journal of Machine Learning Research", "IEEE Transactions on Pattern Analysis", "Communications of the ACM", "Journal of Artificial Intelligence Research"],
-        "Medicine": ["The Lancet", "New England Journal of Medicine", "JAMA", "Nature Medicine", "BMJ"],
-        "Environmental Science": ["Nature Climate Change", "Environmental Science & Technology", "Global Environmental Change", "Conservation Biology"],
-        "Mathematics": ["Annals of Mathematics", "Journal of the American Mathematical Society", "Inventiones Mathematicae", "Mathematical Programming"],
-        "Engineering": ["IEEE Transactions on Engineering", "Journal of Engineering Design", "Environmental Engineering Science"]
-    }
-    
-    journal = random.choice(journals.get(domain, journals["Computer Science"]))
-    
-    # Generate a title related to the query and domain
-    capitalized_query = " ".join(word.capitalize() for word in query.split())
-    title_templates = [
-        f"Recent Advances in {capitalized_query} Research",
-        f"A Novel Approach to {capitalized_query} Using {subdomain} Techniques",
-        f"Comprehensive Analysis of {capitalized_query} Methods",
-        f"The Future of {capitalized_query}: A {subdomain} Perspective",
-        f"{capitalized_query}: Challenges and Opportunities",
-        f"Optimizing {capitalized_query} Systems through {subdomain}",
-        f"Understanding {capitalized_query} Dynamics in Modern {domain}"
-    ]
-    
-    title = random.choice(title_templates)
-    
-    # Generate publication year (last 3 years)
-    year = random.randint(current_year - 3, current_year)
-    
-    # Generate citation count (more recent papers have fewer citations)
-    max_citations = 100 - ((current_year - year) * 30)
-    citations = random.randint(5, max(10, max_citations))
-    
-    # Generate DOI
-    doi_prefix = "10." + str(random.randint(1000, 9999))
-    doi_suffix = journal.lower().replace(" ", "")[:3] + "." + str(year) + "." + str(random.randint(10, 99)) + "." + str(random.randint(100, 999))
-    doi = doi_prefix + "/" + doi_suffix
-    
-    # Generate keywords based on query and domain
-    domain_keywords = {
-        "Physics": ["quantum mechanics", "thermodynamics", "relativity", "electromagnetism", "optics"],
-        "Biology": ["genomics", "proteomics", "cell signaling", "evolution", "ecology"],
-        "Chemistry": ["catalysis", "synthesis", "spectroscopy", "molecular dynamics", "polymers"],
-        "Computer Science": ["algorithms", "data structures", "neural networks", "optimization", "machine learning"],
-        "Medicine": ["clinical trials", "therapeutics", "diagnostics", "pathology", "epidemiology"],
-        "Environmental Science": ["climate modeling", "biodiversity", "pollution", "conservation", "ecosystem"],
-        "Mathematics": ["theorem", "proof", "algorithm", "optimization", "topology"],
-        "Engineering": ["design", "simulation", "control systems", "materials", "efficiency"]
-    }
-    
-    # Generate keywords by combining query keywords with domain keywords
-    query_keywords = [q.lower() for q in query.split() if len(q) > 3]
-    all_keywords = query_keywords + random.sample(domain_keywords.get(domain, domain_keywords["Computer Science"]), min(3, len(domain_keywords.get(domain, domain_keywords["Computer Science"]))))
-    keywords = list(set(all_keywords))  # Remove duplicates
-    
-    # Generate an abstract
-    abstract_templates = [
-        f"This paper explores recent developments in {query}, focusing on applications within {subdomain}. We present a novel approach that improves traditional methods by {random.randint(20, 50)}% in terms of efficiency and accuracy.",
-        
-        f"A comprehensive review of {query} research over the past {random.randint(3, 10)} years, with particular emphasis on advancements in {subdomain}. This study synthesizes findings from over {random.randint(50, 200)} publications to provide a state-of-the-art overview.",
-        
-        f"This study presents a new methodology for addressing challenges in {query} using techniques from {subdomain}. Our experiments demonstrate significant improvements over baseline approaches, with performance gains of {random.randint(15, 40)}% on standard benchmarks.",
-        
-        f"We introduce a novel framework for {query} that leverages recent advances in {subdomain}. Through extensive evaluation on {random.randint(3, 8)} datasets, we demonstrate that our approach outperforms existing methods by a substantial margin while requiring fewer computational resources."
-    ]
-    
-    abstract = random.choice(abstract_templates)
-    
-    # Generate related papers
-    all_papers = list(PAPERS_DB.keys())
-    related_papers = []
-    if all_papers:
-        num_related = min(random.randint(1, 3), len(all_papers))
-        related_papers = random.sample(all_papers, num_related)
-    
-    # Create paper data
-    paper_data = {
-        "id": paper_id,
-        "title": title,
-        "authors": authors,
-        "journal": journal,
-        "abstract": abstract,
-        "year": year,
-        "keywords": keywords,
-        "doi": doi,
-        "citations": citations,
-        "related_papers": related_papers
-    }
-    
-    return paper_id, paper_data
-
-# Add tools to MCP
+# Add MCP tools for Semantic Scholar paper search
 @mcp_server.tool()
 def search_papers(query: str) -> str:
     """
-    Search for scientific papers based on a query.
+    Search for scientific papers based on a query using Semantic Scholar API.
     
     Args:
         query: Search terms for finding relevant papers
@@ -339,104 +92,102 @@ def search_papers(query: str) -> str:
     Returns:
         Formatted string with search results
     """
-    # Check if it's a nuclear energy query
-    if "nuclear" in query.lower() and ("energy" in query.lower() or "power" in query.lower()):
-        # Use our predefined nuclear energy papers
-        papers = {k: v for k, v in PAPERS_DB.items() if k.startswith("NE")}
-    # Check if it's a quantum computing query
-    elif "quantum" in query.lower() and "comput" in query.lower():
-        # Use our predefined quantum computing papers
-        papers = {k: v for k, v in PAPERS_DB.items() if k.startswith("QC")}
-    else:
-        # Generate papers dynamically
-        papers = {}
-        for i in range(1, 4):  # Generate 3 papers
-            paper_id, paper_data = generate_paper_data(query, "GEN")
-            papers[paper_id] = paper_data
-            # Add to global database
-            PAPERS_DB[paper_id] = paper_data
+    # Set up the API request to Semantic Scholar
+    api_url = "https://api.semanticscholar.org/graph/v1/paper/search"
     
-    # Format the results
-    result = f"## Search Results for \"{query}\"\n\n"
-    result += f"I found {len(papers)} papers related to {query}:\n\n"
+    # These are the fields we want to retrieve for each paper
+    fields = [
+        "title",        # Paper title
+        "authors",      # List of authors
+        "year",         # Publication year
+        "abstract",     # Paper abstract
+        "venue",        # Publication venue (conference/journal)
+        "citationCount", # Number of citations
+        "url"           # Link to the paper
+    ]
     
-    for i, (paper_id, paper) in enumerate(papers.items(), 1):
-        result += f"### Paper {i}: {paper['title']} ({paper['year']})\n"
-        result += f"- **ID**: {paper_id}\n"
-        result += f"- **Authors**: {', '.join(paper['authors'])}\n"
-        result += f"- **Journal**: {paper['journal']}\n"
-        result += f"- **Citations**: {paper['citations']}\n"
-        result += f"- **Abstract**: {paper['abstract'][:200]}...\n\n"
+    # Set up query parameters
+    params = {
+        "query": query,       # The user's search query
+        "limit": 5,           # Return up to 5 results
+        "fields": ",".join(fields) # The fields we want to get back
+    }
     
-    return result
-
-@mcp_server.tool()
-def analyze_citation_graph(paper_id: str) -> str:
-    """
-    Analyze the citation graph for a specific paper.
+    # Add a user agent
+    headers = {
+        "User-Agent": "MCP Scientific Paper Analyzer/1.0"
+    }
     
-    Args:
-        paper_id: Identifier for the paper to analyze
+    try:
+        # Send GET request to Semantic Scholar API
+        response = requests.get(api_url, params=params, headers=headers)
         
-    Returns:
-        Formatted string with citation analysis
-    """
-    # Check if paper exists
-    if paper_id not in PAPERS_DB:
-        return f"Paper with ID '{paper_id}' not found."
+        # Check if the request was successful
+        if response.status_code == 200:
+            # Parse the JSON response
+            search_results = response.json()
+            papers = search_results.get("data", [])
+            
+            # Format the results
+            result = f"## Search Results for \"{query}\"\n\n"
+            
+            if not papers:
+                return f"{result}No papers found for this query. Try different search terms."
+            
+            result += f"I found {len(papers)} papers related to {query}:\n\n"
+            
+            for i, paper in enumerate(papers, 1):
+                # Extract paper details
+                title = paper.get("title", "Untitled")
+                year = paper.get("year", "Unknown year")
+                
+                # Format authors
+                authors = paper.get("authors", [])
+                author_names = []
+                for author in authors:
+                    if isinstance(author, dict):
+                        name = author.get("name", "")
+                        if name:
+                            author_names.append(name)
+                    elif isinstance(author, str):
+                        author_names.append(author)
+                
+                author_text = ", ".join(author_names) if author_names else "Unknown authors"
+                
+                # Get venue/journal information
+                venue = paper.get("venue", "Unknown venue")
+                
+                # Get citation count
+                citation_count = paper.get("citationCount", 0)
+                
+                # Get abstract (truncate if too long)
+                abstract = paper.get("abstract", "No abstract available.")
+                if abstract and len(abstract) > 200:
+                    abstract = abstract[:200] + "..."
+                
+                # Get URL to the paper
+                url = paper.get("url", "")
+                
+                # Format all the information for this paper
+                result += f"### Paper {i}: {title} ({year})\n"
+                result += f"- **ID**: P{i}\n"
+                result += f"- **Authors**: {author_text}\n"
+                result += f"- **Venue**: {venue}\n"
+                result += f"- **Citations**: {citation_count}\n"
+                result += f"- **Abstract**: {abstract}\n"
+                if url:
+                    result += f"- **URL**: {url}\n"
+                result += "\n"
+            
+            return result
+        
+        else:
+            # Handle API error responses
+            return f"Error searching for papers: {response.status_code} - {response.text}"
     
-    paper = PAPERS_DB[paper_id]
-    
-    # Generate citation data
-    cited_by_count = paper["citations"]
-    h_index = max(1, cited_by_count // 10)  # Simplified h-index calculation
-    
-    # Create fake citing papers
-    citing_papers = []
-    for i in range(min(5, cited_by_count)):
-        domain = random.choice(list(SCIENTIFIC_DOMAINS.keys()))
-        subdomain = random.choice(SCIENTIFIC_DOMAINS[domain])
-        citing_title = f"{subdomain} Applications in {domain}: A Reference to {paper['title'].split(':')[0]}"
-        citing_citations = random.randint(1, max(2, cited_by_count // 3))
-        citing_papers.append((citing_title, citing_citations))
-    
-    # Sort citing papers by citation count
-    citing_papers.sort(key=lambda x: x[1], reverse=True)
-    
-    # Format the result
-    result = f"## Citation Analysis: {paper['title']}\n\n"
-    result += f"### Paper ID: {paper_id}\n"
-    result += f"- **Total Citations**: {cited_by_count}\n"
-    result += f"- **Publication Year**: {paper['year']}\n"
-    result += f"- **H-index of Authors**: {h_index}\n"
-    
-    if citing_papers:
-        result += "- **Key Citing Papers**:\n"
-        for i, (title, citations) in enumerate(citing_papers[:3], 1):
-            result += f"  {i}. \"{title}\" ({citations} citations)\n"
-    
-    # Citation trends
-    current_year = datetime.now().year
-    years_since_publication = current_year - paper["year"]
-    
-    result += "\n### Citation Trends\n"
-    if years_since_publication <= 1:
-        result += f"This paper was published recently and has already gathered {cited_by_count} citations, indicating significant interest in the field.\n"
-    elif paper["citations"] > 30:
-        result += f"This paper has been consistently cited since its publication in {paper['year']}, with an average of {paper['citations'] // years_since_publication} citations per year.\n"
-    else:
-        result += f"This paper has received moderate attention since its publication in {paper['year']}, with citation rates typical for the field.\n"
-    
-    # Field impact
-    result += "\n### Field Impact\n"
-    if paper["citations"] > 40:
-        result += "This paper appears to be highly influential in its field, with citation patterns suggesting it may be a seminal work in the area.\n"
-    elif paper["citations"] > 20:
-        result += "This paper has made a notable contribution to its field, as evidenced by steady citation patterns from researchers in related domains.\n"
-    else:
-        result += "This paper represents a contribution to its specific research niche, with citations primarily from closely related research areas.\n"
-    
-    return result
+    except Exception as e:
+        # Handle any exceptions that might occur
+        return f"An error occurred while searching for papers: {str(e)}"
 
 @mcp_server.resource("paper://{paper_id}")
 def get_paper(paper_id: str) -> str:
@@ -449,33 +200,163 @@ def get_paper(paper_id: str) -> str:
     Returns:
         Formatted string with paper details
     """
-    # Check if paper exists
-    if paper_id not in PAPERS_DB:
-        return f"Paper with ID '{paper_id}' not found."
+    # Handle IDs from our search results differently
+    if paper_id.startswith("P"):
+        return f"Paper ID {paper_id} is a reference to search results. Please use the URL from the search results to access the full paper."
     
-    paper = PAPERS_DB[paper_id]
+    # Try to fetch from Semantic Scholar
+    try:
+        # API URL for paper lookup
+        api_url = f"https://api.semanticscholar.org/graph/v1/paper/{paper_id}"
+        
+        # Fields to retrieve
+        fields = ["title", "authors", "year", "abstract", "venue", "citationCount", "url", "references"]
+        params = {
+            "fields": ",".join(fields)
+        }
+        
+        headers = {
+            "User-Agent": "MCP Scientific Paper Analyzer/1.0"
+        }
+        
+        # Send the request
+        response = requests.get(api_url, params=params, headers=headers)
+        
+        if response.status_code == 200:
+            paper = response.json()
+            
+            # Extract and format paper details
+            title = paper.get("title", "Untitled")
+            year = paper.get("year", "Unknown year")
+            venue = paper.get("venue", "Unknown venue")
+            citation_count = paper.get("citationCount", 0)
+            abstract = paper.get("abstract", "No abstract available.")
+            url = paper.get("url", "")
+            
+            # Format authors
+            authors = paper.get("authors", [])
+            author_names = []
+            for author in authors:
+                if isinstance(author, dict):
+                    name = author.get("name", "")
+                    if name:
+                        author_names.append(name)
+                elif isinstance(author, str):
+                    author_names.append(author)
+            
+            author_text = ", ".join(author_names) if author_names else "Unknown authors"
+            
+            # Format the result
+            result = f"## Paper Details: {title}\n\n"
+            result += f"- **Authors**: {author_text}\n"
+            result += f"- **Year**: {year}\n"
+            result += f"- **Venue**: {venue}\n"
+            result += f"- **Citations**: {citation_count}\n"
+            result += f"- **Abstract**: {abstract}\n"
+            if url:
+                result += f"- **URL**: {url}\n"
+            
+            # Add references if available
+            references = paper.get("references", [])
+            if references and len(references) > 0:
+                result += f"\n### References (showing up to 5 of {len(references)})\n"
+                for i, ref in enumerate(references[:5], 1):
+                    ref_title = ref.get("title", "Untitled reference")
+                    ref_year = ref.get("year", "")
+                    ref_year_str = f" ({ref_year})" if ref_year else ""
+                    result += f"{i}. {ref_title}{ref_year_str}\n"
+            
+            return result
+        
+        elif response.status_code == 404:
+            return f"Paper with ID '{paper_id}' not found in the Semantic Scholar database."
+        
+        else:
+            return f"Error retrieving paper: {response.status_code} - {response.text}"
+        
+    except Exception as e:
+        return f"An error occurred while retrieving paper details: {str(e)}"
+
+@mcp_server.tool()
+def analyze_citation_graph(paper_id: str) -> str:
+    """
+    Analyze the citation graph for a specific paper.
     
-    # Format the result
-    result = f"## Paper Details: {paper['title']}\n\n"
-    result += f"- **ID**: {paper_id}\n"
-    result += f"- **Authors**: {', '.join(paper['authors'])}\n"
-    result += f"- **Journal**: {paper['journal']}\n"
-    result += f"- **Year**: {paper['year']}\n"
-    result += f"- **DOI**: {paper['doi']}\n"
-    result += f"- **Citations**: {paper['citations']}\n"
-    result += f"- **Abstract**: {paper['abstract']}\n"
+    Args:
+        paper_id: Identifier for the paper to analyze
+        
+    Returns:
+        Formatted string with citation analysis
+    """
+    # Handle search result IDs
+    if paper_id.startswith("P"):
+        return f"Paper ID {paper_id} is a reference to search results. Please use the URL or DOI from the search results to analyze citations."
     
-    if paper['keywords']:
-        result += f"- **Keywords**: {', '.join(paper['keywords'])}\n"
-    
-    if paper['related_papers']:
-        result += "- **Related Papers**:\n"
-        for rel_id in paper['related_papers']:
-            if rel_id in PAPERS_DB:
-                rel_paper = PAPERS_DB[rel_id]
-                result += f"  - {rel_id}: \"{rel_paper['title']}\" ({rel_paper['year']})\n"
-    
-    return result
+    # Try to fetch the paper and its citations
+    try:
+        # API URL for paper lookup
+        api_url = f"https://api.semanticscholar.org/graph/v1/paper/{paper_id}"
+        
+        # Fields needed for citation analysis
+        fields = ["title", "year", "citationCount", "citations", "references"]
+        params = {
+            "fields": ",".join(fields)
+        }
+        
+        headers = {
+            "User-Agent": "MCP Scientific Paper Analyzer/1.0"
+        }
+        
+        # Send the request
+        response = requests.get(api_url, params=params, headers=headers)
+        
+        if response.status_code == 200:
+            paper = response.json()
+            
+            # Extract basic paper information
+            title = paper.get("title", "Untitled")
+            year = paper.get("year", "Unknown year")
+            citation_count = paper.get("citationCount", 0)
+            
+            # Get citations and references data
+            citations = paper.get("citations", [])
+            references = paper.get("references", [])
+            
+            # Format the result
+            result = f"## Citation Analysis: {title} ({year})\n\n"
+            result += f"- **Total Citations**: {citation_count}\n"
+            result += f"- **References**: {len(references)}\n\n"
+            
+            # Analyze papers that cite this paper
+            if citations and len(citations) > 0:
+                # Sort citations by count if available
+                sorted_citations = sorted(
+                    citations, 
+                    key=lambda x: x.get("citationCount", 0) if isinstance(x, dict) else 0, 
+                    reverse=True
+                )
+                
+                result += f"### Top Citing Papers (showing up to 5 of {len(citations)})\n"
+                
+                for i, citation in enumerate(sorted_citations[:5], 1):
+                    cit_title = citation.get("title", "Untitled")
+                    cit_year = citation.get("year", "")
+                    cit_count = citation.get("citationCount", "N/A")
+                    
+                    result += f"{i}. **{cit_title}** ({cit_year}) - Cited {cit_count} times\n"
+            else:
+                result += "This paper has not been cited yet according to Semantic Scholar.\n"
+            
+            return result
+        
+        elif response.status_code == 404:
+            return f"Paper with ID '{paper_id}' not found in the Semantic Scholar database."
+        
+        else:
+            return f"Error analyzing citations: {response.status_code} - {response.text}"
+        
+    except Exception as e:
+        return f"An error occurred while analyzing citation graph: {str(e)}"
 
 # Integrate MCP server with FastAPI
 app.mount("/mcp", mcp_server.sse_app)
@@ -506,24 +387,16 @@ async def health():
 
 @app.post("/api/set-api-key", response_model=ApiKeyResponse)
 async def set_api_key(request: ApiKeyRequest, response: Response):
-    """
-    Test a Gemini API key and optionally set it as a cookie.
-    
-    Args:
-        request: Contains the API key to test
-        
-    Returns:
-        Success status and message
-    """
+    """Test a Gemini API key and optionally set it as a cookie."""
     try:
         # Test the API key by configuring Gemini
         genai.configure(api_key=request.api_key)
         
         # Try a simple generation to verify the key works
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-2.0-flash-lite")
         _ = model.generate_content("Hello")
         
-        # Set a cookie with the API key (secure in production environments)
+        # Set a cookie with the API key
         response.set_cookie(
             key="gemini_api_key",
             value=request.api_key,
@@ -647,7 +520,7 @@ async def chat(request: ChatRequest, req: Request):
             }]
         }]
         
-        # Create model with tools - try different available models
+        # Try different available Gemini models
         try:
             model = genai.GenerativeModel("gemini-1.5-flash")
         except Exception:
@@ -667,51 +540,38 @@ async def chat(request: ChatRequest, req: Request):
             elif msg["role"] == "assistant":
                 chat.history.append({"role": "model", "parts": [msg["content"]]})
         
-        # Format a system message with clear instructions
+        # Format system message with instructions
         system_message = """You are a helpful research assistant that specializes in scientific papers.
 
-        You have access to the following tools:
-        1. search_papers(query) - Search for papers matching a query
-        2. get_paper(paper_id) - Get detailed information about a paper with a specific ID
-        3. analyze_citation_graph(paper_id) - Analyze the citation relationships for a paper
+You have access to the following tools:
+1. search_papers(query) - Search for papers matching a query using the Semantic Scholar database
+2. get_paper(paper_id) - Get detailed information about a paper with a specific ID
+3. analyze_citation_graph(paper_id) - Analyze the citation relationships for a paper
 
-        IMPORTANT GUIDELINES:
-        - When users ask to search for papers, use search_papers(query)
-        - When users refer to papers by ID (like NE1, QC2, etc.), use these IDs with get_paper() or analyze_citation_graph()
-        - Always reply in clear, concise language focusing on the information requested
-        - Format your responses with clear headings and bullet points
-        - DO NOT include ANY HTML tags in your responses - no div, span, button, p, code, or any other HTML
-        - Do not use markdown code blocks with triple backticks
-        - Do not mention or reference any HTML elements or components in your text
-        - When mentioning tool calls, simply write the function name with parentheses, e.g. get_paper(NE1)
-        - Always provide actual information from the tools, never say a function is a "stub" or not implemented
-        - If a user asks for comparison or details, always use the appropriate tools to retrieve the information
-        """
+IMPORTANT GUIDELINES:
+- When users ask to search for papers, use search_papers(query)
+- Paper IDs start with 'P' for search results, e.g. P1, P2
+- Always reply in clear, concise language focusing on the information requested
+- Format your responses with clear headings and bullet points
+- If a user asks for comparison or details, always use the appropriate tools to retrieve the information
+"""
         
         # Send initial message with the user query
         try:
             response = chat.send_message(
                 request.message,
-                system_instruction=system_message,
                 tools=tools
             )
         except Exception as e:
-            # If system_instruction param doesn't work, try alternative approach
+            # If that fails, try with system message in content
             try:
-                response = chat.send_message(
-                    content=[
-                        {"text": system_message, "role": "system"},
-                        {"text": request.message, "role": "user"}
-                    ],
-                    tools=tools
-                )
-            except Exception as e2:
-                # If that also fails, try most basic approach
-                print(f"Error with system instruction: {e2}")
                 response = chat.send_message(
                     f"{system_message}\n\nUser query: {request.message}",
                     tools=tools
                 )
+            except Exception as e2:
+                print(f"Error sending message: {e2}")
+                response = chat.send_message(request.message)
         
         # Process any tool calls
         handled_tool_call = False
