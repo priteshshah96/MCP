@@ -59,21 +59,19 @@ This project shows how to build a basic MCP server with a Streamlit frontend. Th
 
 ## Project Structure
 
+
 ```
 basic-mcp-app/
+├── .env.example           # Template for environment variables
+├── .gitignore             # Git ignore file
+├── README.md              # Project documentation
+├── requirements.txt       # Project dependencies
 ├── backend/
-│   ├── app/
-│   │   ├── mcp/        # MCP implementation
-│   │   ├── api/        # API endpoints
-│   │   ├── core/       # Core functionality
-│   │   └── models/     # Data models
-│   └── main.py         # Application entry point
-├── frontend/
-│   ├── app.py          # Streamlit application
-│   └── utils/          # Utility functions
-├── .env.example        # Example environment variables
-└── requirements.txt    # Project dependencies
+│   └── main.py            # Backend API with MCP implementation
+└── frontend/
+    └── app.py             # Streamlit frontend
 ```
+
 
 ## Features
 
