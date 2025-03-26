@@ -1,11 +1,11 @@
 """
-MCP Scientific Paper Analyzer - Gradio Frontend (Gradio 5.23.0)
+MCP Scientific Paper Analyzer - Gradio Frontend using latest version(Gradio 5.23.0)
 
-This application provides a user interface for the MCP Scientific Paper Analyzer using Gradio.
-It connects to the backend API to process user queries and display responses.
+This application provides a frontend for Scientific Paper Analyzer using Gradio.
+It connects to the backend API to process users input and display responses from tools and LLM
 
 To run:
-1. Make sure the backend is running
+1. Backend should be running(i.e in seperate terminal cd fontend running
 2. Run: python frontend/app.py
 """
 import os
@@ -21,25 +21,22 @@ load_dotenv()
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 API_KEY = os.getenv("GEMINI_API_KEY", "")
 
-# Initialize state
+# Start state
 conversation_history = []
 
-# Function to clean text
+# same as the backend
 def clean_text(text):
-    """Clean response text of any unwanted HTML or formatting"""
+    """Clean response text removing unwanted html tags"""
     if not text:
         return ""
-    
-    # Ensure text begins with a newline for consistent formatting
     if not text.startswith('\n'):
         text = '\n' + text
     
-    # Remove HTML tags that shouldn't be in the response
+    # Remove HTML tags
     text = re.sub(r'</?[a-zA-Z][^>]*>', '', text)
-    
     return text
 
-# Function to check backend status
+# This checks the backend status
 def check_backend_status():
     try:
         response = requests.get(f"{BACKEND_URL}/health", timeout=3)
@@ -49,7 +46,7 @@ def check_backend_status():
     except Exception:
         return "Backend not connected ✗"
 
-# Function to verify and save API key
+# Function to save and verify api key
 def save_api_key(api_key):
     global API_KEY
     if not api_key:
@@ -77,7 +74,7 @@ def send_message(message, chatbot, api_key_input):
     if not message or message.strip() == "":
         return chatbot
     
-    # Use API key from input if provided, else use stored key
+    # Use API key from input if provided, else use stored key (.env file)
     current_api_key = api_key_input if api_key_input else API_KEY
     
     # Check if backend is available
@@ -128,18 +125,18 @@ def clear_conversation():
     conversation_history = []
     return None, []
 
-# Create Gradio interface
+# Gradio interface
 with gr.Blocks() as demo:
     with gr.Row():
         gr.Markdown(
             """
-            # MCP Scientific Paper Analyzer
-            ### Analyze, search, and explore scientific papers using AI with Model Context Protocol (MCP)
+            # Scientific Paper Analyzer
+            ### Analyze, search, and explore scientific papers using AI with Model Context Protocol (MCP)(demo has bugs)
             """
         )
     
     with gr.Row():
-        # Main chat column
+        # Main chat column with greeting message
         with gr.Column(scale=7):
             chatbot = gr.Chatbot(
                 value=[[None, "👋 Hello! I'm your research assistant. Ask me to search for papers, analyze citations, or get paper details!"]],
@@ -150,7 +147,7 @@ with gr.Blocks() as demo:
             # Input box
             with gr.Group():
                 message = gr.Textbox(
-                    placeholder="Ask about scientific papers, request analysis, or explore citations...",
+                    placeholder="Ask about scientific papers, request analysis, or explore citations(not working)...",
                     lines=2,
                     show_label=False
                 )
@@ -160,7 +157,7 @@ with gr.Blocks() as demo:
                 submit = gr.Button("Send", variant="primary")
                 clear = gr.Button("Clear Conversation")
                     
-            # Example queries
+            # Few Example queries user can try
             with gr.Accordion("Example Queries", open=False):
                 example_dropdown = gr.Dropdown(
                     choices=[
@@ -202,8 +199,9 @@ with gr.Blocks() as demo:
                 gr.Markdown("## About")
                 gr.Markdown(
                     """
-                    This application demonstrates the use of Model Context Protocol (MCP) 
-                    with Google's Gemini API to create a scientific paper analysis tool.
+                    This application is a demo for the use of Model Context Protocol (MCP) 
+                    with Google's Gemini API to create a scientific paper analysis tool. As this is
+                    a demonstartion, there are few bugs. New features will be added soon. Thanks
                     
                     **Features:**
                     - Search for scientific papers
@@ -217,7 +215,7 @@ with gr.Blocks() as demo:
                     """
                 )
     
-    # Set up event handlers
+    # Event handlers
     submit.click(send_message, [message, chatbot, api_key_input], [chatbot]).then(
         lambda: "", None, [message]
     )
@@ -248,5 +246,5 @@ if __name__ == "__main__":
     print(f"API Key configured: {'Yes' if API_KEY else 'No'}")
     print("\nStarting Gradio interface...")
     
-    # Launch with Gradio options - simplified for compatibility
+    # Launch
     demo.launch(server_name="0.0.0.0", server_port=8501, share=False)

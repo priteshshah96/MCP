@@ -87,6 +87,5 @@ MIT
 
 ## Acknowledgments
 
-- Model Context Protocol (MCP) team
-- FastAPI framework
-- Streamlit team
+- Anthropic for MCP -  https://www.anthropic.com/news/model-context-protocol
+- https://modelcontextprotocol.io/introduction
