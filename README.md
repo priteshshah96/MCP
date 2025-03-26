@@ -1,6 +1,6 @@
 # Basic MCP Application
 
-A simple app that shows how Model Context Protocol (MCP) works with FastAPI and Gradio (because we're not masochists who enjoy Streamlit headaches).
+A simple app that shows how Model Context Protocol (MCP) works with FastAPI and Gradio (because i am not a dev who enjoys Streamlit headaches).
 
 ## Overview
 
@@ -14,7 +14,9 @@ This project demonstrates a basic MCP server with a Gradio frontend (Streamlit w
 
 ## Known Issues
 
-⚠️ **Please Note**: The citation tool is not working properly at the moment. You may see errors when trying to analyze paper citations or when using some of the advanced search features. I am working on fixing this issue. When will it be fixed? Who knows ¯\\\_(ツ)\_/¯. Maybe when we have AGI.
+⚠️ **Please Note**
+- The citation tool is not working properly at the moment. You may see errors when trying to analyze paper citations or when using some of the advanced search features. I am working on fixing this issue. When will it be fixed? Who knows ¯\\\_(ツ)\_/¯. Maybe when we have AGI.
+- Semantic Scholar API has rate limitations, which may cause the search functionality to sometimes return an error message stating "I cannot directly search for and provide you with papers." This is what happens when free APIs meet enthusiastic users - we love them to death. Just wait a bit and try again (or distract yourself with coffee while the rate limits reset).
 
 ## Speed Up Your Setup
 
